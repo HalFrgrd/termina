@@ -1064,9 +1064,11 @@ fn parse_csi_mode(buffer: &[u8]) -> Result<Option<Event>> {
     let mut split = s.split(';');
 
     let mode = match next_parsed::<u16>(&mut split)? {
+        1006 => csi::DecPrivateMode::Code(csi::DecPrivateModeCode::SGRMouse),
+        1016 => csi::DecPrivateMode::Code(csi::DecPrivateModeCode::SGRPixelsMouse),
         2026 => csi::DecPrivateMode::Code(csi::DecPrivateModeCode::SynchronizedOutput),
         2027 => csi::DecPrivateMode::Code(csi::DecPrivateModeCode::GraphemeClustering),
-        _ => bail!(),
+        num => csi::DecPrivateMode::Unspecified(num),
     };
 
     let setting = match next_parsed::<u8>(&mut split)? {
@@ -1342,6 +1344,30 @@ mod test {
 
         let parsed = parse_event(encoded.as_bytes(), false).unwrap().unwrap();
         assert_eq!(parsed, Event::Csi(Csi::Cursor(response)));
+    }
+
+    #[test]
+    fn parse_sgr_pixels_mouse_mode_reset() {
+        let event = parse_event(b"\x1b[?1016;2$y", false).unwrap().unwrap();
+        assert_eq!(
+            event,
+            Event::Csi(Csi::Mode(csi::Mode::ReportDecPrivateMode {
+                mode: csi::DecPrivateMode::Code(csi::DecPrivateModeCode::SGRPixelsMouse),
+                setting: csi::DecModeSetting::Reset,
+            }))
+        );
+    }
+
+    #[test]
+    fn parse_unspecified_mode_report() {
+        let event = parse_event(b"\x1b[?9999;1$y", false).unwrap().unwrap();
+        assert_eq!(
+            event,
+            Event::Csi(Csi::Mode(csi::Mode::ReportDecPrivateMode {
+                mode: csi::DecPrivateMode::Unspecified(9999),
+                setting: csi::DecModeSetting::Set,
+            }))
+        );
     }
 
     #[test]
