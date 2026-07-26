@@ -91,6 +91,51 @@ pub fn encode(input: &[u8]) -> String {
     String::from_utf8(output).expect("Invalid UTF8")
 }
 
+const DECODE_TABLE: [i8; 256] = {
+    let mut table = [-1i8; 256];
+    let mut i = 0;
+    while i < 26 {
+        table[(b'A' + i) as usize] = i as i8;
+        table[(b'a' + i) as usize] = (i + 26) as i8;
+        i += 1;
+    }
+    let mut i = 0;
+    while i < 10 {
+        table[(b'0' + i) as usize] = (i + 52) as i8;
+        i += 1;
+    }
+    table[b'+' as usize] = 62;
+    table[b'/' as usize] = 63;
+    table
+};
+
+pub fn decode(input: &[u8]) -> Result<Vec<u8>, ()> {
+    let mut input = input;
+    while input.ends_with(b"\n") || input.ends_with(b"\r") {
+        input = &input[..input.len() - 1];
+    }
+    let mut output = Vec::with_capacity(input.len() * 3 / 4);
+    let mut buf = 0u32;
+    let mut bits = 0u32;
+
+    for &byte in input {
+        if byte == b'=' || byte == b'\r' || byte == b'\n' {
+            continue;
+        }
+        let val = DECODE_TABLE[byte as usize];
+        if val < 0 {
+            return Err(());
+        }
+        buf = (buf << 6) | (val as u32);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            output.push((buf >> bits) as u8);
+        }
+    }
+    Ok(output)
+}
+
 #[cfg(test)]
 mod tests {
     fn compare_encode(expected: &str, target: &[u8]) {
@@ -163,6 +208,21 @@ mod tests {
          +AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaanqKmqq6ytrq+wsbKztLW2t7i5uru8vb6\
          /wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t/g4eLj5OXm5+jp6uvs7e7v8PHy8/T19vf4+fr7/P3+/w==",
             &bytes,
+        );
+    }
+
+    #[test]
+    fn decode_rfc4648() {
+        assert_eq!(super::decode(b"").unwrap(), b"");
+        assert_eq!(super::decode(b"Zg==").unwrap(), b"f");
+        assert_eq!(super::decode(b"Zm8=").unwrap(), b"fo");
+        assert_eq!(super::decode(b"Zm9v").unwrap(), b"foo");
+        assert_eq!(super::decode(b"Zm9vYg==").unwrap(), b"foob");
+        assert_eq!(super::decode(b"Zm9vYmE=").unwrap(), b"fooba");
+        assert_eq!(super::decode(b"Zm9vYmFy").unwrap(), b"foobar");
+        assert_eq!(
+            super::decode(b"Y29waWVkIHRleHQ=").unwrap(),
+            b"copied text"
         );
     }
 }

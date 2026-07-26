@@ -165,6 +165,32 @@ bitflags::bitflags! {
     }
 }
 
+impl Selection {
+    /// Parses a string of OSC 52 target characters (e.g. `"c"`, `"p"`, `"cp"`) into a [`Selection`].
+    pub fn parse(s: &str) -> Self {
+        let mut selection = Self::NONE;
+        for ch in s.chars() {
+            match ch {
+                'c' => selection |= Self::CLIPBOARD,
+                'p' => selection |= Self::PRIMARY,
+                's' => selection |= Self::SELECT,
+                '0' => selection |= Self::CUT0,
+                '1' => selection |= Self::CUT1,
+                '2' => selection |= Self::CUT2,
+                '3' => selection |= Self::CUT3,
+                '4' => selection |= Self::CUT4,
+                '5' => selection |= Self::CUT5,
+                '6' => selection |= Self::CUT6,
+                '7' => selection |= Self::CUT7,
+                '8' => selection |= Self::CUT8,
+                '9' => selection |= Self::CUT9,
+                _ => {}
+            }
+        }
+        selection
+    }
+}
+
 impl Display for Selection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.contains(Self::CLIPBOARD) {

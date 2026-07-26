@@ -362,7 +362,26 @@ fn parse_osc(buffer: &[u8]) -> Result<Option<Event>> {
     };
     let s = str::from_utf8(&buffer[2..buffer.len()])?;
     let mut split = s.split(';');
-    let index = next_parsed::<u8>(&mut split)?;
+    let index_str = split.next().ok_or(MalformedSequenceError)?;
+
+    if index_str == "52" {
+        let target_str = split.next().unwrap_or("");
+        let selection = osc::Selection::parse(target_str);
+        let payload = split.next().unwrap_or("");
+
+        if payload == "?" {
+            return Ok(Some(Event::Osc(osc::Osc::QuerySelection(selection))));
+        } else if payload.is_empty() {
+            return Ok(Some(Event::Osc(osc::Osc::ClearSelection(selection))));
+        } else if let Ok(decoded_bytes) = crate::base64::decode(payload.as_bytes()) {
+            if let Ok(text) = String::from_utf8(decoded_bytes) {
+                return Ok(Some(Event::Paste(text)));
+            }
+        }
+        return Ok(None);
+    }
+
+    let index = index_str.parse::<u8>().map_err(|_| MalformedSequenceError)?;
     let Some(color_number) = osc::DynamicColorNumber::from_index(index) else {
         bail!()
     };
@@ -1330,6 +1349,22 @@ mod test {
                 osc::DynamicColorNumber::TextBackgroundColor,
                 vec![style::RgbColor::new(40, 40, 40).into()]
             ))
+        );
+    }
+
+    #[test]
+    fn parse_osc_52_response() {
+        assert_eq!(
+            parse_event(b"\x1b]52;c;Y29waWVkIHRleHQ=\x1b\\", false)
+                .unwrap()
+                .unwrap(),
+            Event::Paste("copied text".to_string())
+        );
+        assert_eq!(
+            parse_event(b"\x1b]52;c;?\x07", false)
+                .unwrap()
+                .unwrap(),
+            Event::Osc(osc::Osc::QuerySelection(osc::Selection::CLIPBOARD))
         );
     }
 
