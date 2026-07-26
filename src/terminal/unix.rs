@@ -157,7 +157,7 @@ impl Terminal for UnixTerminal {
         termios.make_raw();
         termios::tcsetattr(
             self.write.get_ref(),
-            termios::OptionalActions::Flush,
+            termios::OptionalActions::Now, // <--- PRESERVES UNREAD STDIN
             &termios,
         )?;
 
