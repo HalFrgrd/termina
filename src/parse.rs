@@ -381,7 +381,9 @@ fn parse_osc(buffer: &[u8]) -> Result<Option<Event>> {
         return Ok(None);
     }
 
-    let index = index_str.parse::<u8>().map_err(|_| MalformedSequenceError)?;
+    let index = index_str
+        .parse::<u8>()
+        .map_err(|_| MalformedSequenceError)?;
     let Some(color_number) = osc::DynamicColorNumber::from_index(index) else {
         bail!()
     };
@@ -1361,9 +1363,7 @@ mod test {
             Event::Paste("copied text".to_string())
         );
         assert_eq!(
-            parse_event(b"\x1b]52;c;?\x07", false)
-                .unwrap()
-                .unwrap(),
+            parse_event(b"\x1b]52;c;?\x07", false).unwrap().unwrap(),
             Event::Osc(osc::Osc::QuerySelection(osc::Selection::CLIPBOARD))
         );
     }

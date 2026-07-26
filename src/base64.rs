@@ -220,9 +220,6 @@ mod tests {
         assert_eq!(super::decode(b"Zm9vYg==").unwrap(), b"foob");
         assert_eq!(super::decode(b"Zm9vYmE=").unwrap(), b"fooba");
         assert_eq!(super::decode(b"Zm9vYmFy").unwrap(), b"foobar");
-        assert_eq!(
-            super::decode(b"Y29waWVkIHRleHQ=").unwrap(),
-            b"copied text"
-        );
+        assert_eq!(super::decode(b"Y29waWVkIHRleHQ=").unwrap(), b"copied text");
     }
 }
