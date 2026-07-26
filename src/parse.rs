@@ -338,6 +338,7 @@ fn parse_csi(buffer: &[u8]) -> Result<Option<Event>> {
                         b'~' => return parse_csi_special_key_code(buffer),
                         b'u' => return parse_csi_u_encoded_key_code(buffer),
                         b'R' => return parse_csi_cursor_position(buffer),
+                        b't' => return parse_csi_window_response(buffer),
                         _ => return parse_csi_modifier_key_code(buffer),
                     }
                 }
@@ -943,6 +944,37 @@ fn parse_csi_cursor_position(buffer: &[u8]) -> Result<Option<Event>> {
     ))))
 }
 
+fn parse_csi_window_response(buffer: &[u8]) -> Result<Option<Event>> {
+    assert!(buffer.starts_with(b"\x1B["));
+    assert!(buffer.ends_with(b"t"));
+
+    let s = str::from_utf8(&buffer[2..buffer.len() - 1])?;
+    let mut split = s.split(';');
+
+    let ps = match next_parsed::<u16>(&mut split) {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+
+    match ps {
+        4 => {
+            let height = next_parsed::<i64>(&mut split).ok();
+            let width = next_parsed::<i64>(&mut split).ok();
+            Ok(Some(Event::Csi(Csi::Window(Box::new(
+                csi::Window::ReportTextAreaSizePixelsResponse { width, height },
+            )))))
+        }
+        6 => {
+            let height = next_parsed::<i64>(&mut split).ok();
+            let width = next_parsed::<i64>(&mut split).ok();
+            Ok(Some(Event::Csi(Csi::Window(Box::new(
+                csi::Window::ReportCellSizePixelsResponse { width, height },
+            )))))
+        }
+        _ => Ok(None),
+    }
+}
+
 fn parse_csi_cursor_shape_query_response(buffer: &[u8]) -> Result<Option<Event>> {
     assert!(buffer.starts_with(b"\x1B[>")); // CSI >
     assert!(buffer.ends_with(b" q"));
@@ -1403,5 +1435,30 @@ mod test {
         assert_eq!(event, Some(Event::Paste("Hello, world!".to_string())));
         let event = parse_event(b"\x1b[200~\x1b[201~", false).unwrap();
         assert_eq!(event, Some(Event::Paste("".to_string())));
+    }
+
+    #[test]
+    fn parse_csi_window_responses() {
+        let event_4 = parse_event(b"\x1b[4;768;1024t", false).unwrap().unwrap();
+        assert_eq!(
+            event_4,
+            Event::Csi(Csi::Window(Box::new(
+                csi::Window::ReportTextAreaSizePixelsResponse {
+                    width: Some(1024),
+                    height: Some(768),
+                }
+            )))
+        );
+
+        let event_6 = parse_event(b"\x1b[6;20;10t", false).unwrap().unwrap();
+        assert_eq!(
+            event_6,
+            Event::Csi(Csi::Window(Box::new(
+                csi::Window::ReportCellSizePixelsResponse {
+                    width: Some(10),
+                    height: Some(20),
+                }
+            )))
+        );
     }
 }
