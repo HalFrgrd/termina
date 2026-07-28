@@ -36,7 +36,9 @@
 //! ```
 
 #[cfg(unix)]
-mod unix;
+pub(crate) mod unix;
+#[cfg(unix)]
+pub(crate) use unix::FileDescriptor;
 
 #[cfg(windows)]
 mod windows;

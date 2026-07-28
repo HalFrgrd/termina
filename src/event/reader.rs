@@ -95,7 +95,6 @@ impl EventReader {
         let shared = Shared {
             events: VecDeque::with_capacity(32),
             source,
-            skipped_events: Vec::with_capacity(32),
         };
         Self {
             shared: Arc::new(Mutex::new(shared)),
@@ -146,45 +145,48 @@ impl EventReader {
 
 #[derive(Debug)]
 struct Shared {
-    events: VecDeque<Event>,
+    events: VecDeque<Option<Event>>,
     source: PlatformEventSource,
-    skipped_events: Vec<Event>,
 }
 
 impl Shared {
+    fn compact_front(&mut self) {
+        while matches!(self.events.front(), Some(None)) {
+            self.events.pop_front();
+        }
+    }
+
     fn poll<F>(&mut self, timeout: Option<Duration>, mut filter: F) -> io::Result<bool>
     where
         F: FnMut(&Event) -> bool,
     {
-        if self.events.iter().any(&mut (filter)) {
-            return Ok(true);
+        self.compact_front();
+
+        for slot in self.events.iter() {
+            if let Some(event) = slot {
+                if (filter)(event) {
+                    return Ok(true);
+                }
+            }
         }
 
         let timeout = PollTimeout::new(timeout);
 
         loop {
-            let maybe_event = match self.source.try_read(timeout.leftover()) {
-                Ok(None) => None,
+            match self.source.try_read(timeout.leftover()) {
+                Ok(None) => {}
                 Ok(Some(event)) => {
-                    if (filter)(&event) {
-                        Some(event)
-                    } else {
-                        self.skipped_events.push(event);
-                        None
+                    let matches = (filter)(&event);
+                    self.events.push_back(Some(event));
+                    if matches {
+                        return Ok(true);
                     }
                 }
                 Err(err) if err.kind() == io::ErrorKind::Interrupted => return Ok(false),
                 Err(err) => return Err(err),
-            };
+            }
 
-            if timeout.elapsed() || maybe_event.is_some() {
-                self.events.extend(self.skipped_events.drain(..));
-
-                if let Some(event) = maybe_event {
-                    self.events.push_front(event);
-                    return Ok(true);
-                }
-
+            if timeout.elapsed() {
                 return Ok(false);
             }
         }
@@ -194,18 +196,69 @@ impl Shared {
     where
         F: FnMut(&Event) -> bool,
     {
-        let mut skipped_events = VecDeque::new();
-
         loop {
-            while let Some(event) = self.events.pop_front() {
-                if (filter)(&event) {
-                    self.events.extend(skipped_events.drain(..));
-                    return Ok(event);
-                } else {
-                    skipped_events.push_back(event);
+            self.compact_front();
+
+            for slot in self.events.iter_mut() {
+                if let Some(event) = slot {
+                    if (filter)(event) {
+                        let matched_event = slot.take().unwrap();
+                        self.compact_front();
+                        return Ok(matched_event);
+                    }
                 }
             }
+
             let _ = self.poll(None, &mut filter)?;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::event::{KeyCode, KeyEvent, Modifiers, MouseButton, MouseEvent, MouseEventKind};
+    use crate::terminal::FileDescriptor;
+    use std::os::unix::io::BorrowedFd;
+
+    #[test]
+    fn test_filtered_read_preserves_strict_chronological_order() {
+        let key_a = Event::Key(KeyEvent::new(KeyCode::Char('a'), Modifiers::NONE));
+        let mouse_ev = Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 10,
+            row: 20,
+            modifiers: Modifiers::NONE,
+        });
+        let key_b = Event::Key(KeyEvent::new(KeyCode::Char('b'), Modifiers::NONE));
+
+        let stdin_fd = unsafe { BorrowedFd::borrow_raw(0) };
+        let stdout_fd = unsafe { BorrowedFd::borrow_raw(1) };
+        let source = PlatformEventSource::new(
+            FileDescriptor::Borrowed(stdin_fd),
+            FileDescriptor::Borrowed(stdout_fd),
+        )
+        .unwrap();
+
+        let mut shared = Shared {
+            events: VecDeque::from(vec![
+                Some(key_a.clone()),
+                Some(mouse_ev.clone()),
+                Some(key_b.clone()),
+            ]),
+            source,
+        };
+
+        // Filter reading only keys should consume key_a first
+        let read_key = shared.read(|ev| matches!(ev, Event::Key(_))).unwrap();
+        assert_eq!(read_key, key_a);
+
+        // Next read matching any event should consume mouse_ev (the next event in chronological order), NOT key_b
+        let read_next = shared.read(|_| true).unwrap();
+        assert_eq!(read_next, mouse_ev);
+
+        // Final read consumes key_b
+        let read_last = shared.read(|_| true).unwrap();
+        assert_eq!(read_last, key_b);
     }
 }
