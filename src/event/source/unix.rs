@@ -226,6 +226,17 @@ fn poll(fds: [BorrowedFd<'_>; 3], timeout: Option<Duration>) -> std::io::Result<
     #[cfg(target_os = "macos")]
     use select2 as poll_impl;
 
-    let timespec = timeout.map(|timeout| timeout.try_into().unwrap());
+    let timespec = timeout.map(|timeout| {
+        let mut sec: i64 = timeout.as_secs().try_into().unwrap();
+        let mut nsec = timeout.subsec_nanos();
+        if (nsec + 999) / 1000 >= 1_000_000 {
+            sec = sec.checked_add(1).unwrap();
+            nsec = 0;
+        }
+        Timespec {
+            tv_sec: sec,
+            tv_nsec: nsec as _,
+        }
+    });
     poll_impl(fds, timespec.as_ref())
 }
