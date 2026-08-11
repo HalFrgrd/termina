@@ -1092,12 +1092,10 @@ fn parse_csi_device_attributes(buffer: &[u8]) -> Result<Option<Event>> {
     assert!(buffer.starts_with(b"\x1B["));
     assert!(buffer.ends_with(b"c"));
 
-    // This is a stub for parsing device attributes. This response is not
-    // exposed in the crossterm API so we don't need to parse the individual attributes yet.
-    // See <https://vt100.net/docs/vt510-rm/DA1.html>
+    let raw = str::from_utf8(&buffer[2..buffer.len() - 1])?.to_string();
 
     Ok(Some(Event::Csi(Csi::Device(
-        csi::Device::DeviceAttributes(()),
+        csi::Device::DeviceAttributes(raw),
     ))))
 }
 
@@ -1526,7 +1524,9 @@ mod test {
         let event = parse_event(b"\x1b[>1;10;0c", false).unwrap().unwrap();
         assert_eq!(
             event,
-            Event::Csi(Csi::Device(csi::Device::DeviceAttributes(())))
+            Event::Csi(Csi::Device(csi::Device::DeviceAttributes(
+                ">1;10;0".to_string()
+            )))
         );
     }
 
@@ -1538,7 +1538,9 @@ mod test {
         let da2_event = parser.pop();
         assert_eq!(
             da2_event,
-            Some(Event::Csi(Csi::Device(csi::Device::DeviceAttributes(()))))
+            Some(Event::Csi(Csi::Device(csi::Device::DeviceAttributes(
+                ">1;10;0".to_string()
+            ))))
         );
 
         parser.parse(b"a", true);
