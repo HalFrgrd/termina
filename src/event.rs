@@ -165,6 +165,14 @@ pub struct KeyEvent {
     /// This is empty unless the input source reports state outside the ordinary modifier mask,
     /// such as keypad-originated input, Caps Lock, or Num Lock.
     pub state: KeyEventState,
+
+    /// The key at the same physical position in the standard PC-101 (US) layout.
+    ///
+    /// Terminals report this with [`KittyKeyboardFlags::REPORT_ALTERNATE_KEYS`] when it differs
+    /// from [`Self::code`], for example `c` for `ctrl+с` on a Cyrillic layout. Match shortcuts
+    /// against it as a fallback so they keep working on non-Latin layouts. It is `None` when the
+    /// terminal did not report it.
+    pub base_layout_code: Option<KeyCode>,
 }
 
 impl KeyEvent {
@@ -175,6 +183,7 @@ impl KeyEvent {
             modifiers,
             kind: KeyEventKind::Press,
             state: KeyEventState::NONE,
+            base_layout_code: None,
         }
     }
 }
@@ -186,6 +195,7 @@ impl From<KeyCode> for KeyEvent {
             kind: KeyEventKind::Press,
             modifiers: Modifiers::NONE,
             state: KeyEventState::NONE,
+            base_layout_code: None,
         }
     }
 }
