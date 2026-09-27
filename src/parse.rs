@@ -295,6 +295,7 @@ fn parse_csi(buffer: &[u8]) -> Result<Option<Event>> {
             modifiers: Modifiers::SHIFT,
             kind: KeyEventKind::Press,
             state: KeyEventState::NONE,
+            base_layout_code: None,
         })),
         b'M' => return parse_csi_normal_mouse(buffer),
         b'<' => return parse_csi_sgr_mouse(buffer),
@@ -543,15 +544,24 @@ fn parse_csi_u_encoded_key_code(buffer: &[u8]) -> Result<Option<Event>> {
     }
 
     // When the "report alternate keys" flag is enabled in the Kitty Keyboard Protocol
-    // and the terminal sends a keyboard event containing shift, the sequence will
-    // contain an additional codepoint separated by a ':' character which contains
-    // the shifted character according to the keyboard layout.
-    if modifiers.contains(Modifiers::SHIFT) {
-        if let Some(shifted_c) = codepoints
+    // the key code may be followed by two ':'-separated alternates:
+    //
+    //     unicode-key-code:shifted-key:base-layout-key
+    //
+    // The shifted key is the shifted character according to the keyboard layout and
+    // may be empty when only the base layout key is sent (`1089::99`). The base
+    // layout key is the key at the same position in the standard PC-101 layout.
+    let mut alternate_char = || {
+        codepoints
             .next()
             .and_then(|codepoint| codepoint.parse::<u32>().ok())
             .and_then(char::from_u32)
-        {
+    };
+    let shifted_c = alternate_char();
+    let base_layout_code = alternate_char().map(KeyCode::Char);
+
+    if modifiers.contains(Modifiers::SHIFT) {
+        if let Some(shifted_c) = shifted_c {
             code = KeyCode::Char(shifted_c);
             modifiers.set(Modifiers::SHIFT, false);
         }
@@ -562,6 +572,7 @@ fn parse_csi_u_encoded_key_code(buffer: &[u8]) -> Result<Option<Event>> {
         modifiers,
         kind,
         state: state_from_keycode | state_from_modifiers,
+        base_layout_code,
     });
 
     Ok(Some(event))
@@ -658,6 +669,7 @@ fn parse_csi_modifier_key_code(buffer: &[u8]) -> Result<Option<Event>> {
         modifiers,
         kind,
         state: KeyEventState::NONE,
+        base_layout_code: None,
     });
 
     Ok(Some(event))
@@ -704,6 +716,7 @@ fn parse_csi_special_key_code(buffer: &[u8]) -> Result<Option<Event>> {
         modifiers,
         kind,
         state,
+        base_layout_code: None,
     });
 
     Ok(Some(event))
@@ -1571,5 +1584,30 @@ mod test {
                 Modifiers::NONE,
             )))
         );
+    }
+
+    #[test]
+    fn parse_csi_u_base_layout_key() {
+        let key = |buffer: &[u8]| match parse_event(buffer, false).unwrap().unwrap() {
+            Event::Key(key) => key,
+            other => panic!("expected a key event, got {other:?}"),
+        };
+
+        // ctrl+с on a Cyrillic layout: no shifted key, base layout key `c`.
+        let event = key(b"\x1B[1089::99;5u");
+        assert_eq!(event.code, KeyCode::Char('с'));
+        assert_eq!(event.modifiers, Modifiers::CONTROL);
+        assert_eq!(event.base_layout_code, Some(KeyCode::Char('c')));
+
+        // shift+с: the shifted key still replaces the code.
+        let event = key(b"\x1B[1089:1057:99;2u");
+        assert_eq!(event.code, KeyCode::Char('С'));
+        assert_eq!(event.modifiers, Modifiers::NONE);
+        assert_eq!(event.base_layout_code, Some(KeyCode::Char('c')));
+
+        // No alternates reported.
+        let event = key(b"\x1B[99;5u");
+        assert_eq!(event.code, KeyCode::Char('c'));
+        assert_eq!(event.base_layout_code, None);
     }
 }

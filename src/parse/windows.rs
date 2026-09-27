@@ -319,6 +319,7 @@ pub(crate) mod legacy {
                         modifiers,
                         kind,
                         state: KeyEventState::empty(),
+                        base_layout_code: None,
                     };
                     return Some(WindowsKeyEvent::KeyEvent(key_event));
                 }
@@ -387,6 +388,7 @@ pub(crate) mod legacy {
                 modifiers,
                 kind,
                 state: KeyEventState::empty(),
+                base_layout_code: None,
             };
             return Some(WindowsKeyEvent::KeyEvent(key_event));
         }
