@@ -1989,10 +1989,10 @@ impl Display for SetKeyboardFlagsMode {
 ///     "\x1b[c",
 /// );
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Device {
     /// A device-attributes response.
-    DeviceAttributes(()),
+    DeviceAttributes(String),
 
     /// [DECSTR] - soft terminal reset.
     ///
@@ -2026,7 +2026,7 @@ pub enum Device {
 impl Display for Device {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::DeviceAttributes(_) => unimplemented!(),
+            Self::DeviceAttributes(raw) => write!(f, "{raw}c"),
             Self::SoftReset => write!(f, "!p"),
             Self::RequestPrimaryDeviceAttributes => write!(f, "c"),
             Self::RequestSecondaryDeviceAttributes => write!(f, ">c"),
