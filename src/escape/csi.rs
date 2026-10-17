@@ -850,6 +850,14 @@ impl Cursor {
             col: OneBased::from_zero_based(0),
         }
     }
+
+    /// Moves the cursor to zero-based column `col` and zero-based line `line`.
+    pub const fn goto(col: u16, line: u16) -> Self {
+        Self::Position {
+            col: OneBased::from_zero_based(col),
+            line: OneBased::from_zero_based(line),
+        }
+    }
 }
 
 impl Display for Cursor {
@@ -2331,6 +2339,8 @@ mod test {
             "\x1b[0 q",
             Csi::Cursor(Cursor::CursorStyle(CursorStyle::Default)).to_string()
         );
+
+        assert_eq!("\x1b[3;5H", Csi::Cursor(Cursor::goto(4, 2)).to_string());
     }
 
     #[test]
